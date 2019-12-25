@@ -1,13 +1,16 @@
 import logging
 
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, ConversationHandler, CallbackQueryHandler
-from telegram import ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup
 
 import config
 import telegramcalendar
 
 import datetime
 import dateutil.parser
+
+import uuid
+from threading import Timer
 
 # Enable logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -23,7 +26,9 @@ SET_DATE, SET_TIME, SET_TITLE, CONFIRM = range(4)
 # context. Error handlers also receive the raised TelegramError object in error.
 def start(update, context):
     """Send a message when the command /start is issued."""
-    update.message.reply_text('Hi!')
+    custom_keyboard = [['/list', '/set']]
+    reply_markup = ReplyKeyboardMarkup(custom_keyboard)
+    update.message.reply_text('Hi!', reply_markup=reply_markup)
 
 
 def help(update, context):
@@ -105,18 +110,45 @@ def set_title(update, context):
 
 def confirm(update, context):
     query = update.callback_query
+    date_time = context.user_data['date_time']
     date_time_str = context.user_data['date_time_str']
     title = context.user_data['title']
+
+    def send_reminder(*args):
+        # delete expired reminder from user_data['reminders']
+        del context.user_data['reminders'][args[2]]
+        logger.info(context.user_data)
+        # send reminder message
+        context.bot.send_message(chat_id=update.callback_query.from_user.id,
+                                text=f'it is a reminder: "{args[0]}"\nthat had been set to: {args[1]}')
+
     if int(query.data):
         logger.info(context.user_data)
         # set timer and put it to context.user_data
-        query.edit_message_text(f'reminder has been set to: {date_time_str}\ntitle: "{title}"')
+        delay = (date_time - datetime.datetime.now()).total_seconds()
+        logger.info(delay)
+        if delay > 0:
+            timer_id = uuid.uuid1()
+            if 'reminders' not in context.user_data:
+                context.user_data['reminders'] = {}
+            context.user_data['reminders'][timer_id] = Timer(delay, send_reminder, [title, date_time_str, timer_id])
+            context.user_data['reminders'][timer_id].start()
+
+            query.edit_message_text(f'reminder has been set to: {date_time_str}\ntitle: "{title}"')
+        else:
+            query.edit_message_text('time of your reminder has passed.\nset a new reminder please.\nuse "/set" command')
+            return ConversationHandler.END
     else:
         logger.info(f'reminder {title} has been canceled')
         query.edit_message_text('reminder has been canceled')
+
+    # clear temp data
+    del context.user_data['date'], context.user_data['date_time'], context.user_data['date_time_str'], context.user_data['title']
+    logger.info(context.user_data)
     return ConversationHandler.END
 
 def cancel(update, context):
+    logger.info('cancel command')
     update.message.reply_text('Bye! I hope we can talk again some day.')
     return ConversationHandler.END
 
@@ -140,7 +172,8 @@ def main():
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start),
             CommandHandler('set', set_reminder_init),
-            MessageHandler(Filters.text, echo)
+            # CommandHandler('cancel', cancel),
+            # MessageHandler(Filters.text, echo)
         ],
 
         states={
