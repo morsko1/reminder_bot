@@ -19,6 +19,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 
+# conversation states
 SET_DATE, SET_TIME, SET_TITLE, CONFIRM = range(4)
 
 
@@ -30,7 +31,9 @@ def start(update, context):
     reply_markup = ReplyKeyboardMarkup(custom_keyboard)
     text = ('Hi!'
         '\nThis is the reminder bot.'
-        '\nIt can help you not to forget something important.')
+        '\nIt can help you not to forget something important.'
+        '\n\nuse "/set" command to set new reminder.'
+        '\nuse "/list" command to see your active reminders.')
     update.message.reply_text(text, reply_markup=reply_markup)
 
 
@@ -45,8 +48,9 @@ def echo(update, context):
 
 
 def set_reminder_init(update, context):
-    update.message.reply_text(text='set a date:\n\nuse "/cancel" command to cancel reminder.',
+    msg = update.message.reply_text(text='set a date:\n\nuse "/cancel" command to cancel reminder.',
                             reply_markup=telegramcalendar.create_calendar())
+    context.user_data['del'] = msg.message_id
     return SET_DATE
 
 
@@ -58,7 +62,6 @@ def set_date(update, context):
         today = datetime.date.today()
         selected_date = date.date()
         if (selected_date < today):
-            logger.info('date has already passed')
             context.bot.send_message(chat_id=update.callback_query.from_user.id,
                                 text='date has already passed.\nset a date:',
                                 reply_markup=telegramcalendar.create_calendar())
@@ -69,6 +72,8 @@ def set_date(update, context):
             '\nselect time'
             '\nformat: hh:mm'
             '\n\nuse "/cancel" command to cancel reminder.')
+        context.bot.delete_message(chat_id=update.callback_query.from_user.id,
+                                message_id=context.user_data['del'])
         context.bot.send_message(chat_id=update.callback_query.from_user.id,
                                 text=text,
                                 reply_markup=ReplyKeyboardRemove())
@@ -82,7 +87,6 @@ def set_time(update, context):
     try:
         validtime = datetime.datetime.strptime(time_input, '%H:%M')
     except ValueError:
-        logger.info('invalid time')
         update.message.reply_text('invalid time format.\nselect time\nformat: hh:mm')
         return SET_TIME
 
@@ -91,7 +95,6 @@ def set_time(update, context):
 
     # check time has not passed
     if datetime.datetime.now() > date_time:
-        logger.info('time has already passed')
         update.message.reply_text('time has already passed. set another time.')
         return SET_TIME
 
@@ -127,7 +130,6 @@ def confirm(update, context):
     def send_reminder(*args):
         # delete expired reminder from user_data['reminders']
         context.user_data['reminders'] = [i for i in context.user_data['reminders'] if not (i['id'] == args[2])]
-        logger.info(context.user_data)
         # send reminder message
         text = (f'it is a reminder: "{args[0]}"'
             f'\nthat had been set to: {args[1]}'
@@ -138,7 +140,6 @@ def confirm(update, context):
 
     # if "ok" button was pressed
     if int(query.data):
-        logger.info(context.user_data)
         # set timer and put it to context.user_data
         delay = (date_time - datetime.datetime.now()).total_seconds()
         if delay > 0:
@@ -170,18 +171,15 @@ def confirm(update, context):
             query.edit_message_text(text_passed)
     # if "cancel" button was pressed
     else:
-        logger.info(f'reminder {title} has been canceled')
         query.edit_message_text('reminder has been canceled.\nuse "/set" command to set new reminder.')
 
     # clear temp data
     del context.user_data['date'], context.user_data['date_time'], context.user_data['date_time_str'], context.user_data['title']
-    logger.info(context.user_data)
     return ConversationHandler.END
 
 
 def list_reminders(update, context):
     reminders = 'reminders' in context.user_data and context.user_data['reminders'] or []
-    logger.info(reminders)
     if len(reminders) == 0:
         update.message.reply_text('there are no reminders set yet.\n\nuse "/set" command to set new reminder.')
         return
@@ -201,8 +199,7 @@ def delete_reminder(update, context):
         return
 
     try:
-        ind = int(update.message.text.split()[1].strip())
-        ind = ind - 1
+        ind = int(update.message.text.split()[1].strip()) - 1
         if ind + 1 > len(context.user_data['reminders']):
             update.message.reply_text('can\'t find reminder with given number. please try again.')
     except ValueError:
