@@ -55,18 +55,17 @@ def set_date(update, context):
     if selected:
         date_str = str(date).split()[0]
         # validate date input. check it has not passed
-        today_str = str(str(datetime.datetime.now()).split()[0])
-        today = datetime.datetime.strptime(today_str, "%Y-%m-%d").date()
-        selected_date = datetime.datetime.strptime(date_str, "%Y-%m-%d").date()
+        today = datetime.date.today()
+        selected_date = date.date()
         if (selected_date < today):
             logger.info('date has already passed')
             context.bot.send_message(chat_id=update.callback_query.from_user.id,
                                 text='date has already passed.\nset a date:',
                                 reply_markup=telegramcalendar.create_calendar())
             return SET_DATE
-        context.user_data['date'] = date_str
-        date_str_formatted = datetime.datetime.strftime(selected_date, "%d.%m.%Y")
-        text = (f'You selected {date_str_formatted}'
+        context.user_data['date'] = str(selected_date)
+        selected_date_str_formatted = datetime.datetime.strftime(selected_date, "%d.%m.%Y")
+        text = (f'You selected {selected_date_str_formatted}'
             '\nselect time'
             '\nformat: hh:mm'
             '\n\nuse "/cancel" command to cancel reminder.')
